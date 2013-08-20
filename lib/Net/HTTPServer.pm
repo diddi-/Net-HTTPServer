@@ -420,7 +420,7 @@ and/or modify it under the same terms as Perl itself.
   
 use strict;
 use Carp;
-use IO::Socket;
+use IO::Socket qw(:addrinfo SOCK_RAW AF_INET AF_INET6 inet_ntop);
 use IO::Select;
 use FileHandle;
 use File::Path;
@@ -429,7 +429,7 @@ use Net::HTTPServer::Session;
 use Net::HTTPServer::Response;
 use Net::HTTPServer::Request;
 
-use vars qw ( $VERSION %ALLOWED $SSL $Base64 $DigestMD5 );
+use vars qw ( $VERSION %ALLOWED $SSL $IPv6 $Base64 $DigestMD5 );
 
 $VERSION = "1.1.1";
 
@@ -451,6 +451,20 @@ if (eval "require IO::Socket::SSL;")
 else
 {
     $SSL = 0;
+}
+
+#------------------------------------------------------------------------------
+# Do we have IO::Socket::INET6 for IPv6 support?
+#------------------------------------------------------------------------------
+if (eval "require IO::Socket::INET6;")
+{
+    require IO::Socket::INET6;
+    import IO::Socket::INET6;
+    $IPv6 = 1;
+}
+else
+{
+    $IPv6 = 0;
 }
 
 #------------------------------------------------------------------------------
@@ -498,12 +512,16 @@ sub new
     # Get the hostname...
     #--------------------------------------------------------------------------
     my $hostname = (uname)[1];
-    my $address  = gethostbyname($hostname);
-    if ($address)
+    my ($err, @res) = getaddrinfo($hostname, "", {socktype => SOCK_RAW});
+    if (not $err)
     {
-        $hostname = $address;
-        my $temp = gethostbyaddr($address, AF_INET);
-        $hostname = $temp if ($temp);
+        my($gnerr, $address) = getnameinfo($res[0]->{addr}, NI_NUMERICHOST, NIx_NOSERV);
+        if($address)
+        {
+            $hostname = $address;
+            my $temp = gethostbyaddr($address, $res[0]->{addr});
+            $hostname = $temp if ($temp);
+        }
     }
 
     $self->{SERVER}->{NAME} = $hostname;
@@ -517,6 +535,7 @@ sub new
     $self->{CFG}->{MIMETYPES}   = $self->_arg("mimetypes",undef);
     $self->{CFG}->{NUMPROC}     = $self->_arg("numproc",5);
     $self->{CFG}->{OLDREQUEST}  = $self->_arg("oldrequest",0);
+    $self->{CFG}->{HOST}        = $self->_arg("host",undef);
     $self->{CFG}->{PORT}        = $self->_arg("port",9000);
     $self->{CFG}->{SESSIONS}    = $self->_arg("sessions",0);
     $self->{CFG}->{SSL}         = $self->_arg("ssl",0) && $SSL;
@@ -784,6 +803,7 @@ sub Start
     $self->_debug("INIT","Start: Starting the server");
 
     my $port = $self->{CFG}->{PORT};
+    my $host = $self->{CFG}->{HOST};
     my $scan = ($port eq "scan" ? 1 : 0);
     $port = 8000 if $scan;
     
@@ -795,15 +815,32 @@ sub Start
         
         if ($self->{CFG}->{SSL} == 0)
         {
-            $self->{SOCK} = new IO::Socket::INET(LocalPort=>$port,
-                                                 Proto=>"tcp",
-                                                 Listen=>10,
-                                                 Reuse=>1,
-                                                 (($^O ne "MSWin32") ?
-                                                  (Blocking=>0) :
-                                                  ()
-                                                 ),
+            if($IPv6 == 1)
+            {
+                $self->{SOCK} = new IO::Socket::INET6(LocalPort=>$port,
+                                                    LocalAddr=>$host,
+                                                    Proto=>"tcp",
+                                                    Listen=>10,
+                                                    Reuse=>1,
+                                                    (($^O ne "MSWin32") ?
+                                                    (Blocking=>0) :
+                                                    ()
+                                                    ),
                                                 );
+            }
+            else
+            {
+                $self->{SOCK} = new IO::Socket::INET(LocalPort=>$port,
+                                                    LocalAddr=>$host,
+                                                    Proto=>"tcp",
+                                                    Listen=>10,
+                                                    Reuse=>1,
+                                                    (($^O ne "MSWin32") ?
+                                                        (Blocking=>0) :
+                                                        ()
+                                                    ),
+                                                );
+            }
         }
         else
         {
@@ -816,6 +853,7 @@ sub Start
             }
             $self->_debug("INIT","Start: Create an SSL socket.");
             $self->{SOCK} = new IO::Socket::SSL(LocalPort=>$port,
+                                                LocalAddr=>$host,
                                                 Proto=>"tcp",
                                                 Listen=>10,
                                                 Reuse=>1,
@@ -2027,11 +2065,26 @@ sub _process
 
         if ($other_end)
         {
-            my ($port, $iaddr) = unpack_sockaddr_in($other_end);
-            my $ip_addr = inet_ntoa($iaddr);
+            my $family = sockaddr_family($other_end);
+            my $port;
+            my $iaddr;
+            if($family == AF_INET)
+            {
+                ($port, $iaddr) = unpack_sockaddr_in($other_end);
+            }
+            elsif($family == AF_INET6)
+            {
+                ($port, $iaddr) = unpack_sockaddr_in6($other_end);
+            }
+            else
+            {
+                croak("Could not unpack socket address: $!\n");
+            }
+            my $ip_addr = inet_ntop($family, $iaddr);
+            
             $requestObj->_env("REMOTE_ADDR",$ip_addr);
             
-            my $hostname = gethostbyaddr($iaddr, AF_INET);
+            my $hostname = gethostbyaddr($iaddr, $family);
             $requestObj->_env("REMOTE_NAME",$hostname) if ($hostname);
         }
 
