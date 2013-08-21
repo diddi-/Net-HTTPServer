@@ -21,9 +21,10 @@ REQUIREMENTS
   - URI              - Handles all of the URL magic
 
 OPTIONAL
-  - IO::Socket::SSL  - Allows for a secure web server
-  - MIME::Base64     - Allows for Basic Authentication
-  - Digest::MD5      - Allows for Digest Autentication
+  - IO::Socket::SSL    - Allows for a secure web server
+  - IO::Socket::INET6  - Allows for IPv6 support
+  - MIME::Base64       - Allows for Basic Authentication
+  - Digest::MD5        - Allows for Digest Autentication
 
 INSTALLATION
 
@@ -33,6 +34,16 @@ INSTALLATION
 
 STATUS
 
+ - 2013/08/21 -
+  This update enables support for listening on IPv6 interfaces and accepting
+IPv6 clients. The update also adds the possibility to choose which IP to
+have the server listen on by using ->new(host=>'IP').
+
+Another difference is that Net::HTTPServer will now default to listening on
+ipv6-localhost (if available), or ipv4-localhost otherwise if no host=>
+parameter is given.
+
+ - 2004/07/03 -
   This update contains a new OOP style interface for requests and replies.
 I also added support for PHP style server side sessions.
 
@@ -47,5 +58,5 @@ conversion.
   Aplogies for the change.
 
 DATE
-  2004/07/03
+  2013/08/21
 

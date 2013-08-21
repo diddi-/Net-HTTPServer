@@ -81,6 +81,11 @@ and stop.  The config hash takes the options:
                           still serve callbacks.
                           ( Default: undef )
 
+    host => IP          - Specify IPv4 or IPv6 IP address to have
+                          Net::HTTPServer listen on.
+                          ( Default: ::1 if available,
+                            127.0.0.1 otherwise)
+
     index => list       - Specify a list of file names to use as the
                           the index file when a directory is requested.
                           ( Default: ["index.html","index.htm"] )
